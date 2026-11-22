@@ -1,9 +1,0 @@
-Firebase Dashboard Sync Fix
-1. GitHub වෙත index.html, app.js, firebase-sync.js replace කරන්න.
-2. GitHub Pages deploy වූ පසු Ctrl+Shift+R කරන්න.
-3. Sidebar හි Firebase Connected පෙන්වන තුරු රැඳී සිටින්න.
-4. Test record Save කර Firebase වෙත Save වුණා message බලන්න.
-5. Firebase Console -> Realtime Database -> Data -> businessData -> payload පරීක්ෂා කරන්න.
-6. වෙනත් device එකකින් open කර data update වීම බලන්න.
-7. Backup JSON එකක් තබාගන්න.
-NOTE: auth != null anonymous access rules are not private; any visitor can access business data.
