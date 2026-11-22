@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "businessData": {
+      ".read": "auth != null && auth.uid === 'REPLACE_WITH_YOUR_DEVICE_UID'",
+      ".write": "auth != null && auth.uid === 'REPLACE_WITH_YOUR_DEVICE_UID'"
+    }
+  }
+}

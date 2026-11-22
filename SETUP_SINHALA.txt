@@ -1,0 +1,12 @@
+SALIYA ENTERPRISES - FIREBASE SETUP
+
+1. GitHub repository saliya-enterprises root එකට index.html, app.js, style.css, firebase-sync.js, logo.png, banner.png upload කරන්න. README / rules file GitHub එකට upload කිරීම අවශ්‍ය නැහැ.
+2. Firebase Console -> Authentication -> Get Started -> Sign-in method -> Anonymous -> Enable -> Save.
+3. Firebase Realtime Database -> Rules: FIREBASE_RULES.json file එකේ rules paste කරන්න. REPLACE_WITH_YOUR_DEVICE_UID වෙනුවට Browser එකේ පෙන්වන Device ID එක දාන්න. Publish කරන්න.
+4. Device ID ලබාගන්න website එක open කරන්න. පළමු වරට Permission Denied පෙන්වයි; එයට පහළ Device ID Copy button එක ඇත.
+5. Rules Publish කළ පසු website එකේ Retry button click කරන්න.
+6. Cloud එක හිස් නම් පැරණි Browser data Firebase වෙත Upload කරන්න. මුලින් website එකේ Backup JSON එකක් download කර තබාගන්න.
+7. Device එකේ site data / cookies clear කළොත් Anonymous Device ID වෙනස් විය හැක. එවිට අලුත් ID එක Rules වලට update කරන්න. Cloud data නොමැකේ.
+8. මෙම version එක එක manager browser එකකට පමණක් allow කරයි. දෙවන device එකක් අවශ්‍ය නම් Rules වෙනස් කළ යුතුය.
+9. Anonymous Authentication මගින් userට password type කරන්න අවශ්‍ය නැහැ. URL එක පමණක් දැන සිටීම Firebase database access සඳහා ප්‍රමාණවත් නැහැ.
+10. වැදගත්: මෙහි cloud save එක whole-document save ක්‍රමයකි. එකවර devices කිහිපයකින් edit කිරීම සඳහා නිර්දේශ නොකරයි. Firebase internet connection නොමැති විට Save සාර්ථක වූ බව තහවුරු නොකරන්න.
