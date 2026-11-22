@@ -1,92 +1,36 @@
 import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {getAuth,signInAnonymously} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 import {getDatabase,ref,get,onValue,runTransaction} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+
 const config={apiKey:'AIzaSyAnHAMN0twfWtUDCPiHndlhvj3oTWenTN8',authDomain:'saliya-enterprises-dbc2b.firebaseapp.com',databaseURL:'https://saliya-enterprises-dbc2b-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'saliya-enterprises-dbc2b',storageBucket:'saliya-enterprises-dbc2b.firebasestorage.app',messagingSenderId:'129938705415',appId:'1:129938705415:web:1ad8e02ae2a93e09e8eea2'};
-const firebaseApp=initializeApp(config),auth=getAuth(firebaseApp),database=getDatabase(firebaseApp),dataRef=ref(database,'businessData');
+const firebaseApp=initializeApp(config),auth=getAuth(firebaseApp),database=getDatabase(firebaseApp);
+const cloudRef=ref(database,'businessData');
 const KEY='saliya_manager_v2';
+const keys=Object.keys(initial).filter(k=>Array.isArray(initial[k]));
 const clone=x=>JSON.parse(JSON.stringify(x));
-const normalize=x=>({...clone(initial),...(x||{}),settings:{...initial.settings,...(x?.settings||{})}});
-let ready=false,unsub=null,queue=Promise.resolve(),pending=0,baseline=null,initializing=false;
-const syncState=(s)=>{const el=document.getElementById('firebaseSyncState');if(el)el.textContent=s};
-const overlay=document.createElement('div');overlay.id='cloudGate';
-overlay.innerHTML=`<div class="cloud-dialog"><h2>☁️ Saliya Firebase Sync</h2><p id="cloudStatus">Firebase සම්බන්ධ වෙමින්...</p><div id="cloudIdentity" style="display:none"><p>මෙම Browser එකේ Firebase User ID (UID):</p><code id="cloudUid" style="overflow-wrap:anywhere"></code><button id="copyUid" class="btn light">📋 Copy UID</button><p class="muted">Firebase connection එක පරීක්ෂා කරන්න.</p><button id="retryCloud" class="btn">🔄 නැවත සම්බන්ධ කරන්න</button></div><div id="cloudImport" style="display:none"><p>Firebase හි තවම දත්ත නැහැ. මුලින් Backup JSON ගන්න. මෙම Browser එකේ තිබෙන දත්ත Upload කරන්නද?</p><button id="importCloud" class="btn gold">⬆ මේ Browser දත්ත Upload කරන්න</button><button id="startEmpty" class="btn light">හිස් Database එකකින් පටන් ගන්න</button></div></div>`;
-document.body.appendChild(overlay);
-const status=s=>{const el=document.getElementById('cloudStatus');if(el)el.textContent=s};
-const showUid=()=>{document.getElementById('cloudIdentity').style.display='block';document.getElementById('cloudUid').textContent=auth.currentUser?.uid||''};
-const snapshotLocal=()=>{try{return JSON.parse(localStorage.getItem(KEY)||'null')}catch{return null}};
-const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-const arrayKeys=Object.keys(initial).filter(k=>Array.isArray(initial[k]));
-// Merge changes by record ID into the latest server state. This avoids whole-database overwrites
-// when PC and phone create/edit/delete different records at the same time.
-function mergeChanges(remote,base,edited){
- const result=normalize(remote),before=normalize(base),after=normalize(edited);
- for(const key of arrayKeys){
-  const oldMap=new Map(before[key].map(x=>[x.id,x]));
-  const newMap=new Map(after[key].map(x=>[x.id,x]));
-  const server=new Map(result[key].map(x=>[x.id,x]));
-  for(const [id,old] of oldMap)if(!newMap.has(id))server.delete(id);
-  for(const [id,item] of newMap)if(!oldMap.has(id)||!equal(oldMap.get(id),item))server.set(id,item);
-  result[key]=[...server.values()];
- }
- for(const [key,value] of Object.entries(after.settings))if(!equal(before.settings[key],value))result.settings[key]=value;
- return result;
+function normalize(data){const source=data&&typeof data==='object'?data:{};const out={...clone(initial),...source,settings:{...initial.settings,...(source.settings||{})}};for(const k of keys)out[k]=Array.isArray(source[k])?source[k]:[];return out}
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const status=s=>{const el=document.getElementById('firebaseSyncState');if(el)el.textContent=s};
+let ready=false,baseline=null,working=false,dirty=false,unsub=null,writeQueue=Promise.resolve(),lastCloud=null;
+function setView(data){db=normalize(data);localStorage.setItem(KEY,JSON.stringify(db));render()}
+function merge(remote,before,after){const out=normalize(remote),old=normalize(before),now=normalize(after);for(const k of keys){const previous=new Map(old[k].map(r=>[r.id,r]));const current=new Map(now[k].map(r=>[r.id,r]));const merged=new Map(out[k].map(r=>[r.id,r]));for(const id of previous.keys())if(!current.has(id))merged.delete(id);for(const [id,row] of current)if(!previous.has(id)||!same(previous.get(id),row))merged.set(id,row);out[k]=[...merged.values()]};for(const [k,v] of Object.entries(now.settings))if(!same(old.settings[k],v))out.settings[k]=v;return out}
+function cloudChanged(snapshot){const payload=snapshot.val()?.payload;if(!payload)return;lastCloud=normalize(payload);if(working||dirty)return;baseline=clone(lastCloud);if(!same(db,lastCloud))setView(lastCloud);status('☁️ Firebase Connected • Dashboard Updated')}
+function startLive(data){baseline=normalize(data);setView(baseline);ready=true;status('☁️ Firebase Connected • Dashboard Updated');if(unsub)unsub();unsub=onValue(cloudRef,cloudChanged,e=>{status('❌ Firebase Read Error');console.error('Firebase realtime read error',e);alert('Firebase Read Error: '+e.message)})}
+// Detect legacy records saved at the database root by older versions of the website.
+async function readLegacy(){const snap=await get(ref(database));const value=snap.val()||{};const legacy={};let found=false;for(const k of keys){if(Array.isArray(value[k])){legacy[k]=value[k];if(value[k].length)found=true}else if(value[k]&&typeof value[k]==='object'){legacy[k]=Object.values(value[k]);if(legacy[k].length)found=true}}if(value.settings&&typeof value.settings==='object')legacy.settings=value.settings;return found?normalize(legacy):null}
+async function initializeCloud(){status('⏳ Firebase Database පරීක්ෂා කරමින්...');const snap=await get(cloudRef);let cloud=snap.val()?.payload;let legacy=null;try{legacy=await readLegacy()}catch(e){console.warn('Legacy root read unavailable',e)}
+ if(cloud){let normalized=normalize(cloud);if(legacy){const existing=new Set();for(const k of keys){existing.clear();for(const row of normalized[k])existing.add(row.id);for(const row of legacy[k])if(row.id&&!existing.has(row.id)){normalized[k].push(row);existing.add(row.id)}}if(!same(normalized,normalize(cloud))){status('⏳ පරණ සේවක දත්ත Cloud එකට එකතු කරමින්...');const result=await runTransaction(cloudRef,current=>{if(!current?.payload)return;const next=normalize(current.payload);for(const k of keys){const ids=new Set(next[k].map(x=>x.id));for(const row of legacy[k])if(row.id&&!ids.has(row.id)){next[k].push(row);ids.add(row.id)}}return {payload:next,updatedAt:Date.now()}},{applyLocally:false});if(result.committed)normalized=normalize(result.snapshot.val().payload)}}}startLive(normalized);return}
+ const local=normalize(db);const hasLocal=keys.some(k=>local[k].length>0);const seed=legacy|| (hasLocal?local:normalize(initial));
+ if(!confirm('Firebase හි අලුත් Shared Data එකක් ආරම්භ කරන්නද? '+(legacy?'පරණ Firebase Records හමු වුණා; ඒවා රැකගෙන Import කරනවා.':hasLocal?'මේ Browser එකේ දත්ත Cloud එකට Upload කරනවා.':'Database එක හිස්ව ආරම්භ වෙනවා.')))throw Error('Cloud setup අවලංගු කළා');
+ status('⏳ Firebase මුල් දත්ත සකස් කරමින්...');const result=await runTransaction(cloudRef,current=>current?.payload?undefined:{payload:seed,updatedAt:Date.now()},{applyLocally:false});const final=result.snapshot.val()?.payload;if(!final)throw Error('Firebase data initialization failed');startLive(final)
 }
-function updateView(payload){db=normalize(payload);localStorage.setItem(KEY,JSON.stringify(db));render();syncState('☁️ Firebase Connected • දත්ත යාවත්කාලීනයි')}
-function live(snapshot){
- if(!ready||pending>0)return;
- const value=snapshot.val()?.payload;
- if(value){baseline=normalize(value);if(!equal(normalize(value),normalize(db)))updateView(value);else syncState('☁️ Firebase Connected • දත්ත යාවත්කාලීනයි')}
-}
-function connected(payload){syncState('☁️ Firebase Connected • දත්ත යාවත්කාලීනයි');
- baseline=normalize(payload);updateView(payload);ready=true;overlay.remove();
- if(unsub)unsub();unsub=onValue(dataRef,live,e=>{console.error(e);alert('Firebase live sync අසාර්ථකයි: '+e.message)});
-}
-async function firstUpload(payload){
- if(initializing)return;initializing=true;status('Firebase වෙත දත්ත Save කරමින්...');
- try{
-  // Never overwrite data that another device has already initialized.
-  const result=await runTransaction(dataRef,current=>current?.payload?undefined:{payload:normalize(payload),updatedAt:Date.now()},{applyLocally:false});
-  const saved=result.snapshot.val()?.payload;
-  if(!saved)throw Error('Cloud data ලබාගැනීමට නොහැකි වුණා');
-  connected(saved);
- }catch(e){status('Save අසාර්ථකයි: '+e.message);showUid()}
- finally{initializing=false}
-}
-document.getElementById('copyUid').onclick=async()=>{try{await navigator.clipboard.writeText(auth.currentUser.uid);status('Firebase UID Copy වුණා')}catch{status('UID එක select කර Copy කරන්න')}};
-document.getElementById('retryCloud').onclick=connect;
-document.getElementById('importCloud').onclick=()=>firstUpload(snapshotLocal()||initial);
-document.getElementById('startEmpty').onclick=()=>{if(confirm('පරණ Browser Data නොගෙන හිස් Database එකකින් පටන් ගන්නද? මුලින් Backup ගන්න.'))firstUpload(initial)};
-async function connect(){
- status('Firebase Database පරීක්ෂා කරමින්...');
- try{
-  const result=await get(dataRef),value=result.val()?.payload;
-  if(value)connected(value);
-  else{status('Firebase හිස්. පරණ Browser Data Upload කරන්න හෝ හිස් Database එකක් පටන් ගන්න.');document.getElementById('cloudImport').style.display='block';document.getElementById('cloudIdentity').style.display='none'}
- }catch(e){syncState('❌ Firebase Access නැහැ');status('Firebase Access නැහැ: '+e.message+'. Firebase Rules සහ Anonymous Authentication පරීක්ෂා කරන්න.');document.getElementById('cloudIdentity').style.display='block'}
-}
+// Original app's save() only writes localStorage. Intercept every record change,
+// and update the shared Firebase transactionally. Never show a success toast before cloud confirms.
 const originalSave=save;
-save=function(){
- if(!ready){alert('Firebase සම්බන්ධ වන තුරු Save කරන්න බැහැ.');return}
- const edited=normalize(db),base=normalize(baseline);
- originalSave();pending++;syncState('⏳ Firebase වෙත Save කරමින්...');
- queue=queue.then(async()=>{
-  try{
-   const result=await runTransaction(dataRef,current=>{
-    if(!current?.payload)return; // Never recreate an unexpectedly deleted cloud database.
-    return {payload:mergeChanges(current.payload,base,edited),updatedAt:Date.now()};
-   },{applyLocally:false});
-   if(!result.committed)throw Error('Firebase transaction cancel වුණා');
-   baseline=normalize(result.snapshot.val().payload);
-   syncState('✅ Firebase වෙත Save වුණා');
-   toast('✅ Firebase Database එකට Save වුණා');
-  }catch(e){console.error('Firebase save failed',e);syncState('❌ Firebase Save අසාර්ථකයි');alert('⚠️ Firebase Save අසාර්ථකයි. Internet / Firebase Rules පරීක්ෂා කරන්න. Backup JSON එකක් ගන්න. '+e.message)}
-  finally{
-   pending--;
-   if(pending===0){try{const latest=await get(dataRef);if(latest.val()?.payload){baseline=normalize(latest.val().payload);updateView(baseline)}}catch(e){console.warn('Refresh failed',e);syncState('⚠️ Firebase Refresh අසාර්ථකයි')}}
-  }
- });
-};
-// Clear All is disabled: it would destroy shared cloud business data.
-clearAllBusinessData=function(){alert('Cloud data ආරක්ෂාව සඳහා Clear All අක්‍රීය කර ඇත. Records Edit / Delete කරන්න.')};
-status('Firebase Anonymous Authentication සම්බන්ධ වෙමින්...');syncState('⏳ Firebase සම්බන්ධ වෙමින්...');
-signInAnonymously(auth).then(connect).catch(e=>{syncState('❌ Firebase Authentication අසාර්ථකයි');status('Firebase Authentication → Sign-in method → Anonymous Enable කරන්න. '+e.message)});
+save=function(){if(!ready){status('❌ Firebase තවම Connected නැහැ');alert('Firebase Connected වෙන තුරු Save කරන්න බැහැ.');return}const edited=normalize(db);originalSave();dirty=true;status('⏳ Firebase වෙත Save කරමින්...');writeQueue=writeQueue.then(async()=>{working=true;try{const before=normalize(baseline);const result=await runTransaction(cloudRef,current=>{if(!current?.payload)return;return {payload:merge(current.payload,before,edited),updatedAt:Date.now()}},{applyLocally:false});if(!result.committed)throw Error('Firebase write transaction cancelled');baseline=normalize(result.snapshot.val().payload);status('✅ Firebase Save වුණා');}catch(e){console.error('Firebase write failed:',e);status('❌ Firebase Save අසාර්ථකයි');alert('Firebase Save අසාර්ථකයි: '+e.message+'\nBackup JSON එකක් Download කරගන්න.')}finally{working=false}}).then(async()=>{ // Read back only after the most recent queued write.
+  if(working)return;
+  try{const snap=await get(cloudRef);if(snap.val()?.payload){lastCloud=normalize(snap.val().payload);baseline=clone(lastCloud);setView(lastCloud);status('☁️ Firebase Connected • Dashboard Updated')}}catch(e){console.error('Firebase refresh failed',e);status('⚠️ Firebase Refresh අසාර්ථකයි')}dirty=false;
+ });return writeQueue};
+clearAllBusinessData=function(){alert('Shared Firebase Data ආරක්ෂාව සඳහා Clear All අක්‍රීය කර ඇත. අවශ්‍ය Records පමණක් Delete කරන්න.')};
+status('⏳ Firebase Authentication සම්බන්ධ වෙමින්...');
+signInAnonymously(auth).then(initializeCloud).catch(e=>{console.error('Firebase initialization error:',e);status('❌ Firebase සම්බන්ධතාව අසාර්ථකයි');alert('Firebase සම්බන්ධතාව අසාර්ථකයි: '+e.message+'\nFirebase Rules සහ Anonymous Authentication පරීක්ෂා කරන්න.')});
