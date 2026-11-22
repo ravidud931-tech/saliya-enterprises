@@ -1,0 +1,8 @@
+{
+  "rules": {
+    "businessData": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
