@@ -1,0 +1,8 @@
+SALIYA DASHBOARD UPDATE
+
+GitHub repository එකට app.js පමණක් upload/replace කරන්න. අනෙක් files වෙනස් කරන්න එපා.
+Commit changes කර Website එක Ctrl+Shift+R refresh කරන්න.
+Dashboard: අද වැඩ කළ සේවකයින්, සේවක වැටුප් සාරාංශය, අලුත්ම Sales Records.
+සේවකයින් පිටුව: අද Save කළ වැඩ table එක වැඩ form එකට පහළින්.
+Firebase live sync දැනට තිබුණු code එකම භාවිත කරයි.
+Test: Employee add -> Work add -> Dashboard -> Refresh -> Firebase Data check.

@@ -7,6 +7,7 @@ const KEY='saliya_manager_v2';
 const clone=x=>JSON.parse(JSON.stringify(x));
 const normalize=x=>({...clone(initial),...(x||{}),settings:{...initial.settings,...(x?.settings||{})}});
 let ready=false,unsub=null,queue=Promise.resolve(),pending=0,baseline=null,initializing=false;
+const syncState=(s)=>{const el=document.getElementById('firebaseSyncState');if(el)el.textContent=s};
 const overlay=document.createElement('div');overlay.id='cloudGate';
 overlay.innerHTML=`<div class="cloud-dialog"><h2>☁️ Saliya Firebase Sync</h2><p id="cloudStatus">Firebase සම්බන්ධ වෙමින්...</p><div id="cloudIdentity" style="display:none"><p>මෙම Browser එකේ Firebase User ID (UID):</p><code id="cloudUid" style="overflow-wrap:anywhere"></code><button id="copyUid" class="btn light">📋 Copy UID</button><p class="muted">Firebase connection එක පරීක්ෂා කරන්න.</p><button id="retryCloud" class="btn">🔄 නැවත සම්බන්ධ කරන්න</button></div><div id="cloudImport" style="display:none"><p>Firebase හි තවම දත්ත නැහැ. මුලින් Backup JSON ගන්න. මෙම Browser එකේ තිබෙන දත්ත Upload කරන්නද?</p><button id="importCloud" class="btn gold">⬆ මේ Browser දත්ත Upload කරන්න</button><button id="startEmpty" class="btn light">හිස් Database එකකින් පටන් ගන්න</button></div></div>`;
 document.body.appendChild(overlay);
@@ -30,13 +31,13 @@ function mergeChanges(remote,base,edited){
  for(const [key,value] of Object.entries(after.settings))if(!equal(before.settings[key],value))result.settings[key]=value;
  return result;
 }
-function updateView(payload){db=normalize(payload);localStorage.setItem(KEY,JSON.stringify(db));render()}
+function updateView(payload){db=normalize(payload);localStorage.setItem(KEY,JSON.stringify(db));render();syncState('☁️ Firebase Connected • දත්ත යාවත්කාලීනයි')}
 function live(snapshot){
  if(!ready||pending>0)return;
  const value=snapshot.val()?.payload;
- if(value&&!equal(normalize(value),normalize(db))){baseline=normalize(value);updateView(value)}
+ if(value){baseline=normalize(value);if(!equal(normalize(value),normalize(db)))updateView(value);else syncState('☁️ Firebase Connected • දත්ත යාවත්කාලීනයි')}
 }
-function connected(payload){
+function connected(payload){syncState('☁️ Firebase Connected • දත්ත යාවත්කාලීනයි');
  baseline=normalize(payload);updateView(payload);ready=true;overlay.remove();
  if(unsub)unsub();unsub=onValue(dataRef,live,e=>{console.error(e);alert('Firebase live sync අසාර්ථකයි: '+e.message)});
 }
@@ -61,13 +62,13 @@ async function connect(){
   const result=await get(dataRef),value=result.val()?.payload;
   if(value)connected(value);
   else{status('Firebase හිස්. පරණ Browser Data Upload කරන්න හෝ හිස් Database එකක් පටන් ගන්න.');document.getElementById('cloudImport').style.display='block';document.getElementById('cloudIdentity').style.display='none'}
- }catch(e){status('Firebase Access නැහැ: '+e.message+'. Firebase Rules සහ Anonymous Authentication පරීක්ෂා කරන්න.');document.getElementById('cloudIdentity').style.display='block'}
+ }catch(e){syncState('❌ Firebase Access නැහැ');status('Firebase Access නැහැ: '+e.message+'. Firebase Rules සහ Anonymous Authentication පරීක්ෂා කරන්න.');document.getElementById('cloudIdentity').style.display='block'}
 }
 const originalSave=save;
 save=function(){
  if(!ready){alert('Firebase සම්බන්ධ වන තුරු Save කරන්න බැහැ.');return}
  const edited=normalize(db),base=normalize(baseline);
- originalSave();pending++;
+ originalSave();pending++;syncState('⏳ Firebase වෙත Save කරමින්...');
  queue=queue.then(async()=>{
   try{
    const result=await runTransaction(dataRef,current=>{
@@ -76,14 +77,16 @@ save=function(){
    },{applyLocally:false});
    if(!result.committed)throw Error('Firebase transaction cancel වුණා');
    baseline=normalize(result.snapshot.val().payload);
-  }catch(e){console.error('Firebase save failed',e);alert('⚠️ Firebase Save අසාර්ථකයි. Internet / Firebase Rules පරීක්ෂා කරන්න. Backup JSON එකක් ගන්න. '+e.message)}
+   syncState('✅ Firebase වෙත Save වුණා');
+   toast('✅ Firebase Database එකට Save වුණා');
+  }catch(e){console.error('Firebase save failed',e);syncState('❌ Firebase Save අසාර්ථකයි');alert('⚠️ Firebase Save අසාර්ථකයි. Internet / Firebase Rules පරීක්ෂා කරන්න. Backup JSON එකක් ගන්න. '+e.message)}
   finally{
    pending--;
-   if(pending===0){try{const latest=await get(dataRef);if(latest.val()?.payload){baseline=normalize(latest.val().payload);updateView(baseline)}}catch(e){console.warn('Refresh failed',e)}}
+   if(pending===0){try{const latest=await get(dataRef);if(latest.val()?.payload){baseline=normalize(latest.val().payload);updateView(baseline)}}catch(e){console.warn('Refresh failed',e);syncState('⚠️ Firebase Refresh අසාර්ථකයි')}}
   }
  });
 };
 // Clear All is disabled: it would destroy shared cloud business data.
 clearAllBusinessData=function(){alert('Cloud data ආරක්ෂාව සඳහා Clear All අක්‍රීය කර ඇත. Records Edit / Delete කරන්න.')};
-status('Firebase Anonymous Authentication සම්බන්ධ වෙමින්...');
-signInAnonymously(auth).then(connect).catch(e=>{status('Firebase Authentication → Sign-in method → Anonymous Enable කරන්න. '+e.message)});
+status('Firebase Anonymous Authentication සම්බන්ධ වෙමින්...');syncState('⏳ Firebase සම්බන්ධ වෙමින්...');
+signInAnonymously(auth).then(connect).catch(e=>{syncState('❌ Firebase Authentication අසාර්ථකයි');status('Firebase Authentication → Sign-in method → Anonymous Enable කරන්න. '+e.message)});
