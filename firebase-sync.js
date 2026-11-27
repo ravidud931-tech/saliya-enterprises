@@ -1,167 +1,49 @@
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getDatabase, ref, get, onValue, runTransaction } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import {getAuth,signInAnonymously} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+import {getDatabase,ref,get,onValue,runTransaction} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 
-const config = {
-  apiKey: 'AIzaSyAnHAMN0twfWtUDCPiHndlhvj3oTWenTN8',
-  authDomain: 'saliya-enterprises-dbc2b.firebaseapp.com',
-  databaseURL: 'https://saliya-enterprises-dbc2b-default-rtdb.asia-southeast1.firebasedatabase.app',
-  projectId: 'saliya-enterprises-dbc2b',
-  storageBucket: 'saliya-enterprises-dbc2b.firebasestorage.app',
-  messagingSenderId: '129938705415',
-  appId: '1:129938705415:web:1ad8e02ae2a93e09e8eea2'
-};
-const app = initializeApp(config);
-const auth = getAuth(app);
-const database = getDatabase(app);
-const cloudRef = ref(database, 'businessData');
-const storageKey = 'saliya_manager_v2';
-const listKeys = Object.keys(initial).filter(key => Array.isArray(initial[key]));
-const copy = value => JSON.parse(JSON.stringify(value));
-const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const status = message => {
-  const node = document.getElementById('firebaseSyncState');
-  if (node) node.textContent = message;
-};
-function normalize(source) {
-  const input = source && typeof source === 'object' ? source : {};
-  const result = { ...copy(initial), ...input, settings: { ...initial.settings, ...(input.settings || {}) } };
-  for (const key of listKeys) {
-    const value = input[key];
-    result[key] = Array.isArray(value) ? value : (value && typeof value === 'object' ? Object.values(value) : []);
-  }
-  return result;
+const config={apiKey:'AIzaSyAnHAMN0twfWtUDCPiHndlhvj3oTWenTN8',authDomain:'saliya-enterprises-dbc2b.firebaseapp.com',databaseURL:'https://saliya-enterprises-dbc2b-default-rtdb.asia-southeast1.firebasedatabase.app',projectId:'saliya-enterprises-dbc2b',storageBucket:'saliya-enterprises-dbc2b.firebasestorage.app',messagingSenderId:'129938705415',appId:'1:129938705415:web:1ad8e02ae2a93e09e8eea2'};
+const firebaseApp=initializeApp(config),auth=getAuth(firebaseApp),database=getDatabase(firebaseApp);
+const cloudRef=ref(database,'businessData');
+const KEY='saliya_manager_v2';
+const keys=Object.keys(initial).filter(k=>Array.isArray(initial[k]));
+const clone=x=>JSON.parse(JSON.stringify(x));
+function normalize(data){const source=data&&typeof data==='object'?data:{};const out={...clone(initial),...source,settings:{...initial.settings,...(source.settings||{})}};for(const k of keys)out[k]=Array.isArray(source[k])?source[k].filter(Boolean):source[k]&&typeof source[k]==='object'?Object.values(source[k]).filter(Boolean):[];return out}
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const status=s=>{const el=document.getElementById('firebaseSyncState');if(el)el.textContent=s};
+let ready=false,baseline=null,working=false,dirty=false,unsub=null,writeQueue=Promise.resolve(),lastCloud=null;
+function setView(data){db=normalize(data);localStorage.setItem(KEY,JSON.stringify(db));render()}
+function merge(remote,before,after){const out=normalize(remote),old=normalize(before),now=normalize(after);for(const k of keys){const previous=new Map(old[k].map(r=>[r.id,r]));const current=new Map(now[k].map(r=>[r.id,r]));const merged=new Map(out[k].map(r=>[r.id,r]));for(const id of previous.keys())if(!current.has(id))merged.delete(id);for(const [id,row] of current)if(!previous.has(id)||!same(previous.get(id),row))merged.set(id,row);out[k]=[...merged.values()]};for(const [k,v] of Object.entries(now.settings))if(!same(old.settings[k],v))out.settings[k]=v;return out}
+function cloudChanged(snapshot){const payload=snapshot.val()?.payload;if(!payload)return;lastCloud=normalize(payload);if(working||dirty)return;baseline=clone(lastCloud);if(!same(db,lastCloud))setView(lastCloud);status('☁️ Firebase Connected • Dashboard Updated')}
+function startLive(data){baseline=normalize(data);setView(baseline);ready=true;document.getElementById('content').inert=false;document.querySelector('.upload').inert=false;status('☁️ Firebase Connected • Dashboard Updated');if(unsub)unsub();unsub=onValue(cloudRef,cloudChanged,e=>{status('❌ Firebase Read Error');console.error('Firebase realtime read error',e);alert('Firebase Read Error: '+e.message)})}
+// Detect legacy records saved at the database root by older versions of the website.
+async function readLegacy(){const snap=await get(ref(database));const value=snap.val()||{};const legacy={};let found=false;for(const k of keys){if(Array.isArray(value[k])){legacy[k]=value[k];if(value[k].length)found=true}else if(value[k]&&typeof value[k]==='object'){legacy[k]=Object.values(value[k]);if(legacy[k].length)found=true}}if(value.settings&&typeof value.settings==='object')legacy.settings=value.settings;return found?normalize(legacy):null}
+async function initializeCloud(){status('⏳ Firebase Database පරීක්ෂා කරමින්...');const snap=await get(cloudRef);let cloud=snap.val()?.payload;let legacy=null;try{legacy=await readLegacy()}catch(e){console.warn('Legacy root read unavailable',e)}
+ if(cloud){startLive(normalize(cloud));return}
+ const local=normalize(db);const hasLocal=keys.some(k=>local[k].length>0);const seed=legacy|| (hasLocal?local:normalize(initial));
+ if(!confirm('Firebase හි අලුත් Shared Data එකක් ආරම්භ කරන්නද? '+(legacy?'පරණ Firebase Records හමු වුණා; ඒවා රැකගෙන Import කරනවා.':hasLocal?'මේ Browser එකේ දත්ත Cloud එකට Upload කරනවා.':'Database එක හිස්ව ආරම්භ වෙනවා.')))throw Error('Cloud setup අවලංගු කළා');
+ status('⏳ Firebase මුල් දත්ත සකස් කරමින්...');const result=await runTransaction(cloudRef,current=>current?.payload?undefined:{payload:seed,updatedAt:Date.now()},{applyLocally:false});const final=result.snapshot.val()?.payload;if(!final)throw Error('Firebase data initialization failed');startLive(final)
 }
-function showData(value) {
-  db = normalize(value);
-  localStorage.setItem(storageKey, JSON.stringify(db));
-  render();
-}
-function reconcile(remote, before, edited) {
-  const result = normalize(remote);
-  const old = normalize(before);
-  const next = normalize(edited);
-  for (const key of listKeys) {
-    const prior = new Map(old[key].map(row => [row.id, row]));
-    const changed = new Map(next[key].map(row => [row.id, row]));
-    const combined = new Map(result[key].map(row => [row.id, row]));
-    for (const id of prior.keys()) if (!changed.has(id)) combined.delete(id);
-    for (const [id, row] of changed) {
-      if (!prior.has(id) || !equal(prior.get(id), row)) combined.set(id, row);
-    }
-    result[key] = [...combined.values()];
-  }
-  for (const [key, value] of Object.entries(next.settings)) {
-    if (!equal(old.settings[key], value)) result.settings[key] = value;
-  }
-  return result;
-}
-let connected = false;
-let baseline = null;
-let pending = 0;
-let queue = Promise.resolve();
-let detach = null;
-let failed = false;
-let revision = 0;
-const localSave = save;
-
-// Render the edited record immediately; persist it to Firebase in an ordered queue.
-// Do not replace newer unsaved UI edits with an older cloud snapshot.
-save = function () {
-  const snapshot = normalize(db);
-  revision += 1;
-  const myRevision = revision;
-  localSave(); // localStorage + render() so tables and totals update immediately
-  if (!connected || failed) {
-    status('⚠️ Firebase Offline — Browser එකේ පමණක් Save වුණා');
-    console.warn('Firebase save skipped: connection unavailable');
-    return;
-  }
-  pending += 1;
-  status('⏳ Firebase වෙත Save කරමින්...');
-  queue = queue.then(async () => {
-    const before = copy(baseline);
-    const result = await runTransaction(cloudRef, current => {
-      if (!current?.payload) return;
-      return { ...current, payload: reconcile(current.payload, before, snapshot), updatedAt: Date.now() };
-    }, { applyLocally: false });
-    if (!result.committed || !result.snapshot.val()?.payload) throw new Error('Cloud write was not committed');
-    baseline = normalize(result.snapshot.val().payload);
-    pending -= 1;
-    if (pending === 0 && revision === myRevision) {
-      // Render the committed cloud state only if no newer user edit exists.
-      if (!equal(normalize(db), baseline)) showData(baseline);
-      status('✅ Firebase Database එකට Save වුණා');
-    }
-  }).catch(error => {
-    failed = true;
-    pending = 0;
-    console.error('Firebase write failed:', error);
-    status('❌ Firebase Save අසාර්ථකයි — Backup ගන්න');
-    alert('Firebase Save අසාර්ථකයි: ' + error.message + '\nBackup JSON Download කරන්න. Refresh කරන්න එපා.');
-  });
+// Original app's save() only writes localStorage. Intercept every record change,
+// and update the shared Firebase transactionally. Never show a success toast before cloud confirms.
+let pending=0, optimistic=null;
+const originalToast=toast;
+toast=function(message){if(!pending)originalToast(message)};
+const originalSave=save;
+save=function(){
+ if(!ready){status('❌ Firebase not connected');return;}
+ const before=clone(optimistic||baseline),edited=normalize(db);
+ optimistic=clone(edited);pending++;dirty=true;originalSave();status('⏳ Firebase Save pending');
+ writeQueue=writeQueue.then(async()=>{
+ try{
+ const result=await runTransaction(cloudRef,current=>current?.payload?{payload:merge(current.payload,before,edited),updatedAt:Date.now()}:undefined,{applyLocally:false});
+ if(!result.committed)throw Error('Transaction cancelled');
+ baseline=normalize(result.snapshot.val().payload);pending--;
+ if(!pending){dirty=false;optimistic=null;setView(baseline);status('✅ Firebase Saved');originalToast('✅ Firebase Save වුණා');}
+ }catch(e){pending--;ready=false;status('❌ Firebase Save failed — backup and reload');alert('Firebase Save failed: '+e.message+' — Download Backup JSON before reloading.');}
+ });return writeQueue;
 };
-
-clearAllBusinessData = function () {
-  alert('Shared Firebase Data ආරක්ෂාව සඳහා Clear All අක්‍රීය කර ඇත.');
-};
-
-async function begin() {
-  status('⏳ Firebase Authentication සම්බන්ධ වෙමින්...');
-  await signInAnonymously(auth);
-  status('⏳ Firebase Database කියවමින්...');
-  const snapshot = await get(cloudRef);
-  let payload = snapshot.val()?.payload;
-  if (!payload) {
-    const local = normalize(db);
-    const hasLocal = listKeys.some(key => local[key].length > 0);
-    const message = hasLocal
-      ? 'Cloud එකේ Data නැහැ. මේ Browser එකේ දත්ත Firebase එකට මුල් වරට Upload කරන්නද? මුලින් Backup JSON එකක් ගන්න.'
-      : 'Cloud එකේ Data නැහැ. අලුත් Shared Database එකක් ආරම්භ කරන්නද?';
-    if (!confirm(message)) {
-      status('⚠️ Cloud Setup අවලංගු කළා');
-      return;
-    }
-    const created = await runTransaction(cloudRef, current => {
-      if (current?.payload) return;
-      return { payload: local, updatedAt: Date.now() };
-    }, { applyLocally: false });
-    payload = created.snapshot.val()?.payload;
-    if (!payload) {
-      const latest = await get(cloudRef);
-      payload = latest.val()?.payload;
-    }
-    if (!payload) throw new Error('Cloud initialization failed');
-  }
-  baseline = normalize(payload);
-  // Existing Firebase data is authoritative; do not silently overwrite it with local demo data.
-  // Download a Backup JSON before refreshing if local records differ from cloud records.
-  if (!equal(normalize(db), baseline)) {
-    const localHasRecords = listKeys.some(key => Array.isArray(db[key]) && db[key].length);
-    if (localHasRecords) {
-      const proceed = confirm('Browser දත්ත සහ Firebase දත්ත වෙනස්. Firebase දත්ත Load කිරීමට පෙර Browser දත්ත Backup JSON ලෙස Download කරගන්න. Backup ගත්තා නම් OK කරන්න.');
-      if (!proceed) {
-        status('⚠️ Backup ගෙන නැවත Refresh කරන්න');
-        return;
-      }
-    }
-  }
-  showData(baseline);
-  connected = true;
-  status('☁️ Firebase Connected • Dashboard Updated');
-  detach = onValue(cloudRef, snapshot => {
-    const incoming = snapshot.val()?.payload;
-    if (!incoming || pending || failed) return;
-    baseline = normalize(incoming);
-    if (!equal(normalize(db), baseline)) showData(baseline);
-    status('☁️ Firebase Connected • Dashboard Updated');
-  }, error => {
-    console.error('Firebase realtime read failed:', error);
-    status('❌ Firebase Read Error');
-  });
-}
-begin().catch(error => {
-  console.error('Firebase initialization failed:', error);
-  status('❌ Firebase සම්බන්ධතාව අසාර්ථකයි');
-  alert('Firebase සම්බන්ධතාව අසාර්ථකයි: ' + error.message);
-});
+clearAllBusinessData=function(){alert('Shared Firebase Data ආරක්ෂාව සඳහා Clear All අක්‍රීය කර ඇත. අවශ්‍ය Records පමණක් Delete කරන්න.')};
+document.getElementById('content').inert=true;document.querySelector('.upload').inert=true;
+status('⏳ Firebase Authentication සම්බන්ධ වෙමින්...');
+signInAnonymously(auth).then(initializeCloud).catch(e=>{console.error('Firebase initialization error:',e);status('❌ Firebase සම්බන්ධතාව අසාර්ථකයි');alert('Firebase සම්බන්ධතාව අසාර්ථකයි: '+e.message+'\nFirebase Rules සහ Anonymous Authentication පරීක්ෂා කරන්න.')});
